@@ -3,10 +3,16 @@ extern crate gl;
 /*
 * Module with implementation of Shader and Shader Program abstraction for OpenGL
 */
-
-use std::{fs};
-use std::path::Path;
 use std::ffi::{CString};
+use crate::resources::{self, Resources};
+
+#[derive(Debug)]
+pub enum Error {
+    ResourceLoad { name:String, inner: resources::Error},
+    CanNotDetermineShaderTypeForResource { name: String },
+    CompileError { name: String, message: String },
+    LinkError { name: String, message: String },
+}
 
 ///Struct encapsulating Shader Program ID
 pub struct Program {
@@ -14,6 +20,25 @@ pub struct Program {
 }
 
 impl Program {
+    pub fn from_resources(res: &Resources, name: &str) -> Result<Program, Error> {
+        const POSSIBLE_EXTENSION: [&str; 2] = [".vert", ".frag"];
+
+        let resources_names = POSSIBLE_EXTENSION
+            .iter()
+            .map(|file_extension| format!("{}{}", name, file_extension))
+            .collect::<Vec<String>>();
+
+        let shaders = resources_names
+            .iter()
+            .map(|resource_name| Shader::from_resources(res, resource_name))
+            .collect::<Result<Vec<Shader>, Error>>()?;
+
+        Program::from_shaders(&shaders[..]).map_err(|message| Error::LinkError { 
+            name: name.into(), 
+            message
+        })
+    }
+
     /// Creates program based of [`shaders`] slice, all provided shaders
     /// will be linked into program
     pub fn from_shaders(shaders: &[Shader]) -> Result<Program, String>{
@@ -45,7 +70,7 @@ impl Program {
                     error.as_ptr() as *mut gl::types::GLchar);
             }
 
-            return Err(error.to_string_lossy().into_owned())
+            return Err( error.to_string_lossy().into_owned() )
         }
 
         for shader in shaders {
@@ -81,16 +106,33 @@ pub struct Shader {
 }
 
 impl Shader {
-    ///Creates shader with [`shader_type`] from source file stored in [`filepath`]
-    pub fn from_source_file(filepath: &str, shader_type: gl::types::GLenum) -> Result<Shader, String> {
-        let source = load_file(filepath).expect("Failed to load shader source");
+    pub fn from_resources(res: &Resources, name: &str) ->Result<Shader, Error> {
+        const POSSIBLE_EXTENSION: [(&str, gl::types::GLenum); 2] = [
+            (".vert", gl::VERTEX_SHADER),
+            (".frag", gl::FRAGMENT_SHADER)
+        ];
 
+        let shader_kind = POSSIBLE_EXTENSION.iter().find(|&&(file_extension, _)| {
+            name.ends_with(file_extension)
+        }).map(|&(_, kind)| kind).ok_or_else(|| Error::CanNotDetermineShaderTypeForResource { name: name.into() })?;
+
+        let source = res.load_cstring(name).map_err(|e| Error::ResourceLoad {
+            name: name.into(),
+            inner: e,
+        })?;
+
+        Shader::from_source(&source, shader_kind).map_err(|message| Error::CompileError { 
+            name: name.into(), 
+            message, 
+        })
+    }
+
+    ///Creates shader with [`shader_type`] from source file stored in [`filepath`]
+    pub fn from_source(source: &CString, shader_type: gl::types::GLenum) -> Result<Shader, String> {
         let id = unsafe { gl::CreateShader(shader_type) };
 
-        let cstr = CString::new(source).expect("Failed to convert shader source to CString");
-
         unsafe {
-            gl::ShaderSource(id, 1,  &cstr.as_c_str().as_ptr(), std::ptr::null());
+            gl::ShaderSource(id, 1,  &source.as_c_str().as_ptr(), std::ptr::null());
             gl::CompileShader(id);
         }
 
@@ -114,6 +156,7 @@ impl Shader {
 
             return Err(error.to_string_lossy().into_owned())
         }
+
         return Ok(Shader { shader_id: id })
     }
 
@@ -121,19 +164,6 @@ impl Shader {
         return self.shader_id;
     }
 
-}
-
-fn load_file(filepath : &str) -> Result<String, String> {
-    let path = Path::new(filepath);
-
-    println!("Reading file from {}...", {path.display()});
-
-    match fs::read_to_string(path) {
-        Ok(res) => return Ok(res),
-        Err(err) => {
-            return Err(err.to_string());
-        } 
-    }                                    
 }
 
 ///create buffer with specified [`len`]

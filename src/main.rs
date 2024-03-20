@@ -2,17 +2,20 @@
 extern crate gl;
 extern crate glfw;
 
-pub mod shader;
+pub mod render;
+pub mod resources;
 
-use shader::{Shader, Program};
+use resources::Resources;
+use render::{Program, data::f32_f32_f32};
+use std::path::Path;
 use glfw::{Action, Context, Key};
 use std::thread;
 
-//http://nercury.github.io/rust/opengl/tutorial/2018/02/10/opengl-in-rust-from-scratch-03-compiling-shaders.html
+//http://nercury.github.io/rust/opengl/tutorial/2018/02/15/opengl-in-rust-from-scratch-08-failure.html
 fn main() {
     let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
     let (mut glfw_window, events) = glfw.create_window(900, 700, 
-        "Hello this is window", glfw::WindowMode::Windowed)
+        "Animated guacamole", glfw::WindowMode::Windowed)
         .expect("Failed to create GLFW window.");
 
     // Make the window's context current
@@ -21,17 +24,14 @@ fn main() {
 
     let _gl = gl::load_with(|s| glfw_window.get_proc_address(s) as *const std::os::raw::c_void);
     
-    let vertex_shader = Shader::from_source_file("shaders/vertex_shader.vert", gl::VERTEX_SHADER).unwrap();
-    let fragment_shader =  Shader::from_source_file("shaders/fragment_shader.frag", gl::FRAGMENT_SHADER).unwrap();
+    let resources = Resources::from_relative_exe_path(Path::new("assets")).unwrap();
 
-    let shader_program = Program::from_shaders(
-        &[vertex_shader, fragment_shader]
-    ).unwrap();
+    let shader_program = Program::from_resources(&resources, "shaders/triangle").unwrap();
 
-    let vertices: Vec<f32> = vec![
-        -0.5, -0.5, 0.0,    1.0, 0.0, 0.0,
-        0.5, -0.5, 0.0,     0.0, 1.0, 0.0,
-        0.0, 0.5, 0.0,      0.0, 0.0, 1.0
+    let vertices: Vec<f32_f32_f32> = vec![
+        (-0.5, -0.5, 0.0).into(),    (1.0, 0.0, 0.0).into(),
+        (0.5, -0.5, 0.0).into(),     (0.0, 1.0, 0.0).into(),
+        (0.0, 0.5, 0.0).into(),      (0.0, 0.0, 1.0).into()
     ];
 
     let mut vbo: gl::types::GLuint = 0;
@@ -41,7 +41,7 @@ fn main() {
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
         gl::BufferData(
             gl::ARRAY_BUFFER, 
-            (vertices.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr,
+            (vertices.len() * std::mem::size_of::<f32_f32_f32>()) as gl::types::GLsizeiptr,
             vertices.as_ptr() as *const gl::types::GLvoid,
             gl::STATIC_DRAW
         );
@@ -113,6 +113,12 @@ fn main() {
             match event {
                 glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                     glfw_window.set_should_close(true)
+                }
+                glfw::WindowEvent::Key(Key::Right, _, Action::Press, _) => {
+                    println!("Right")
+                }
+                glfw::WindowEvent::Key(Key::Left, _, Action::Press, _) => {
+                    println!("Left")
                 }
                 _ => {}
             }

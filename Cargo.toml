@@ -9,4 +9,5 @@ edition = "2021"
 gl = "0.14.0"
 glfw = "0.52.0"
 
-
+[build-dependencies]
+walkdir = "2.3.3"
